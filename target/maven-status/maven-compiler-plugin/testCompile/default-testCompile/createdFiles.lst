@@ -1,0 +1,13 @@
+gmae\adapters\QuestEventAdapterContractTest.class
+gmae\core\services\fakes\FakeRealmService.class
+gmae\core\services\fakes\FakeInventoryService.class
+gmae\core\services\QuestEventContractTest.class
+gmae\core\services\fakes\FakeQuestEventService.class
+gmae\adapters\InventoryAdapterContractTest.class
+gmae\core\services\InventoryContractTest.class
+gmae\core\services\TimeContractTest.class
+gmae\core\services\RealmContractTest.class
+gmae\core\services\fakes\FakeTimeService.class
+gmae\core\services\fakes\FakeInventoryService$MutableItem.class
+gmae\adapters\TimeAdapterContractTest.class
+gmae\adapters\RealmAdapterContractTest.class
