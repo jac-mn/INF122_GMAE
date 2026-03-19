@@ -4,6 +4,7 @@ import gmae.core.engine.AdventureManager;
 import gmae.core.engine.AdventureRegistry;
 import gmae.core.engine.GameLoop;
 import gmae.core.engine.InputRouter;
+import gmae.core.services.ServiceBundle;
 
 import java.util.List;
 import java.util.Scanner;
@@ -17,11 +18,18 @@ import java.util.Scanner;
 public class ConsoleUI {
 
     private final AdventureRegistry registry;
+    private final ServiceBundle services;
     private final Scanner scanner;
 
-    public ConsoleUI(AdventureRegistry registry, Scanner scanner) {
+    public ConsoleUI(AdventureRegistry registry, ServiceBundle services, Scanner scanner) {
         this.registry = registry;
+        this.services = services;
         this.scanner = scanner;
+    }
+
+    /** Backward-compatible constructor (empty service bundle). */
+    public ConsoleUI(AdventureRegistry registry, Scanner scanner) {
+        this(registry, ServiceBundle.empty(), scanner);
     }
 
     public void run() {
@@ -83,7 +91,7 @@ public class ConsoleUI {
         String p2Name = scanner.nextLine().trim();
         if (p2Name.isEmpty()) p2Name = "Player 2";
 
-        AdventureManager manager = new AdventureManager(registry);
+        AdventureManager manager = new AdventureManager(registry, services);
         InputRouter router = new InputRouter();
         GameLoop loop = new GameLoop(manager, router, scanner);
         loop.run(adventureId, p1Name, p2Name);
