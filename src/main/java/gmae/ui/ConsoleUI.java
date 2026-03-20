@@ -1,9 +1,11 @@
 package gmae.ui;
 
+import gmae.adapters.RealmAdapter;
 import gmae.core.engine.AdventureManager;
 import gmae.core.engine.AdventureRegistry;
 import gmae.core.engine.GameLoop;
 import gmae.core.engine.InputRouter;
+import gmae.core.services.ServiceBundle;
 
 import java.util.List;
 import java.util.Scanner;
@@ -83,7 +85,12 @@ public class ConsoleUI {
         String p2Name = scanner.nextLine().trim();
         if (p2Name.isEmpty()) p2Name = "Player 2";
 
-        AdventureManager manager = new AdventureManager(registry);
+        // Build service bundle with realm adapter
+        ServiceBundle services = ServiceBundle.builder()
+                .realmService(new RealmAdapter())
+                .build();
+        
+        AdventureManager manager = new AdventureManager(registry, services);
         InputRouter router = new InputRouter();
         GameLoop loop = new GameLoop(manager, router, scanner);
         loop.run(adventureId, p1Name, p2Name);

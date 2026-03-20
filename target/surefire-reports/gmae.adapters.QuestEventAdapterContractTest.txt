@@ -1,4 +1,4 @@
 -------------------------------------------------------------------------------
 Test set: gmae.adapters.QuestEventAdapterContractTest
 -------------------------------------------------------------------------------
-Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.037 s -- in gmae.adapters.QuestEventAdapterContractTest
+Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.047 s -- in gmae.adapters.QuestEventAdapterContractTest

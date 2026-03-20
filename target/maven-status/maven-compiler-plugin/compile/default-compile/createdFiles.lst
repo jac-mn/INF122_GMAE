@@ -2,6 +2,7 @@ gmae\adapters\RealmAdapter.class
 gmae\core\engine\AdventureRegistry$EntryInfo.class
 gmae\core\model\Coord.class
 gmae\ui\ConsoleUI.class
+gmae\adventures\timedRaid\TimedRaidWindowAdventure.class
 gmae\core\engine\AdventureRegistry.class
 gmae\core\engine\GameLoop.class
 gmae\core\services\ServiceBundle.class
@@ -13,8 +14,10 @@ gmae\core\model\AdventureState.class
 gmae\core\model\Outcome.class
 gmae\core\services\GmaeTimeService.class
 gmae\core\model\AdventureState$Builder.class
+gmae\adventures\relicHunt\RelicHuntAdventure.class
 gmae\core\model\PlayerView.class
 gmae\core\services\GmaeQuestEventService.class
+gmae\Main.class
 gmae\core\engine\InputRouter.class
 gmae\core\api\PlayerId.class
 gmae\core\model\EntityView.class
