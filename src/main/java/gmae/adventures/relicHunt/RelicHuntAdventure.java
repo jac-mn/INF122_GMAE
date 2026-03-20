@@ -23,7 +23,7 @@ import java.util.Optional;
  *
  * <p>Two players move around a 10×10 "Shadowfen" map collecting relics.
  * The first player to collect 2 relics wins. Uses {@link GmaeRealmService}
- * for movement and entity tracking.</p>
+ * for movement and entity tracking when available.</p>
  *
  * <p><strong>Actions:</strong></p>
  * <ul>
@@ -35,13 +35,19 @@ import java.util.Optional;
  * </ul>
  *
  * <p><strong>Winning:</strong> First player to collect 2 relics wins.
- * If both collect all 3, it's a draw.</p>
+ * With 4 total relics, if both players collect 2 relics (2-2 split), it's a draw.</p>
  */
 public class RelicHuntAdventure implements MiniAdventure {
 
     private static final String REALM = "Shadowfen";
     private static final int RELICS_TO_WIN = 2;
-    private static final int TOTAL_RELICS = 3;
+    private static final int TOTAL_RELICS = 4;
+
+    private static final int GRID_SIZE = 10;
+    private static final int MAX_COORD = GRID_SIZE - 1;
+
+    private static final Coord P1_START = new Coord(0, 0);
+    private static final Coord P2_START = new Coord(9, 9);
 
     private GmaeRealmService realm;
     private int turn;
@@ -51,6 +57,7 @@ public class RelicHuntAdventure implements MiniAdventure {
     private final List<String> messages = new ArrayList<>();
     private final Map<PlayerId, InputEvent> inputBuffer = new EnumMap<>(PlayerId.class);
     private final Map<String, Coord> relicPositions = new HashMap<>();
+    private final Map<PlayerId, Coord> localPlayerPositions = new EnumMap<>(PlayerId.class);
 
     @Override public String id()          { return "relic-hunt"; }
     @Override public String title()       { return "Relic Hunt"; }
@@ -65,16 +72,23 @@ public class RelicHuntAdventure implements MiniAdventure {
         messages.clear();
         inputBuffer.clear();
         relicPositions.clear();
+        localPlayerPositions.clear();
+
+        // Local fallback start positions (used when no realm service is wired).
+        localPlayerPositions.put(PlayerId.P1, P1_START);
+        localPlayerPositions.put(PlayerId.P2, P2_START);
 
         // Initialize relics at fixed positions
         relicPositions.put("relic-1", new Coord(2, 2));
         relicPositions.put("relic-2", new Coord(8, 8));
         relicPositions.put("relic-3", new Coord(5, 5));
+        relicPositions.put("relic-4", new Coord(2, 8));
 
         messages.add("Welcome to Relic Hunt!");
         messages.add("Collect " + RELICS_TO_WIN + " relics to win.");
-        messages.add("Actions: MOVE NORTH|SOUTH|EAST|WEST");
-        messages.add("Relic Locations: (2,2), (8,8), (5,5)");
+        messages.add("Total relics on the map: " + TOTAL_RELICS + " (2-2 split = draw)");
+        messages.add("Actions: MOVE NORTH|SOUTH|EAST|WEST (empty input = PASS)");
+        messages.add("Relic Locations: (2,2), (8,8), (5,5), (2,8)");
     }
 
     @Override
@@ -82,26 +96,16 @@ public class RelicHuntAdventure implements MiniAdventure {
         this.realm = services.realmService().orElse(null);
 
         if (this.realm != null) {
-            // Place both players at the starting corner
             try {
-                this.realm.placePlayer(PlayerId.P1, REALM, new Coord(0, 0));
-                this.realm.placePlayer(PlayerId.P2, REALM, new Coord(9, 9));
-                
-                // Place relics as entities in the realm
-                for (Map.Entry<String, Coord> entry : relicPositions.entrySet()) {
-                    EntityView relic = new EntityView(
-                            entry.getKey(),
-                            "Relic " + entry.getValue(),
-                            "treasure",
-                            entry.getValue(),
-                            REALM
-                    );
-                    this.realm.addEntity(relic);
-                }
-                messages.add("Both players placed. Relics scattered!");
+                setupRealmRound();
+                messages.add("Realm service wired: players placed. Relics scattered!");
             } catch (Exception e) {
                 messages.add("Realm service error: " + e.getMessage());
             }
+        } else {
+            // No realm service means the engine can't place/move players or entities.
+            // The adventure stays playable via its local fallback state.
+            messages.add("Realm service not available — using local simulation.");
         }
     }
 
@@ -118,12 +122,25 @@ public class RelicHuntAdventure implements MiniAdventure {
         messages.add("Turn " + turn + " | P1: " + p1Relics + "/" + RELICS_TO_WIN + 
                     " relics  |  P2: " + p2Relics + "/" + RELICS_TO_WIN + " relics");
         
-        if (realm != null) {
-            Optional<Coord> p1Pos = realm.playerPosition(PlayerId.P1);
-            Optional<Coord> p2Pos = realm.playerPosition(PlayerId.P2);
-            messages.add("P1 @ " + p1Pos.map(c -> "(" + c.x() + "," + c.y() + ")").orElse("?") + 
-                        "    P2 @ " + p2Pos.map(c -> "(" + c.x() + "," + c.y() + ")").orElse("?"));
+        Optional<Coord> p1Pos = playerPosition(PlayerId.P1);
+        Optional<Coord> p2Pos = playerPosition(PlayerId.P2);
+        messages.add("P1 @ " + p1Pos.map(c -> "(" + c.x() + "," + c.y() + ")").orElse("?") + 
+                "    P2 @ " + p2Pos.map(c -> "(" + c.x() + "," + c.y() + ")").orElse("?"));
+
+        if (!relicPositions.isEmpty()) {
+            StringBuilder sb = new StringBuilder("Remaining relics: ");
+            int i = 0;
+            for (Map.Entry<String, Coord> entry : relicPositions.entrySet()) {
+                if (i > 0) sb.append(", ");
+                Coord c = entry.getValue();
+                sb.append("(").append(c.x()).append(",").append(c.y()).append(")");
+                i++;
+            }
+            messages.add(sb.toString());
+        } else {
+            messages.add("Remaining relics: none");
         }
+
         messages.add("─────────────────────────────────────");
 
         processPlayer(PlayerId.P1);
@@ -139,12 +156,10 @@ public class RelicHuntAdventure implements MiniAdventure {
         Map<String, String> p1Attrs = new HashMap<>();
         Map<String, String> p2Attrs = new HashMap<>();
 
-        if (realm != null) {
-            Optional<Coord> p1Pos = realm.playerPosition(PlayerId.P1);
-            Optional<Coord> p2Pos = realm.playerPosition(PlayerId.P2);
-            p1Attrs.put("position", p1Pos.map(c -> c.x() + "," + c.y()).orElse("?"));
-            p2Attrs.put("position", p2Pos.map(c -> c.x() + "," + c.y()).orElse("?"));
-        }
+        Optional<Coord> p1Pos = playerPosition(PlayerId.P1);
+        Optional<Coord> p2Pos = playerPosition(PlayerId.P2);
+        p1Attrs.put("position", p1Pos.map(c -> c.x() + "," + c.y()).orElse("?"));
+        p2Attrs.put("position", p2Pos.map(c -> c.x() + "," + c.y()).orElse("?"));
         p1Attrs.put("relics", String.valueOf(p1Relics));
         p2Attrs.put("relics", String.valueOf(p2Relics));
 
@@ -169,13 +184,18 @@ public class RelicHuntAdventure implements MiniAdventure {
     @Override
     public void reset() {
         init();
+        if (realm != null) {
+            try {
+                setupRealmRound();
+            } catch (Exception e) {
+                messages.add("Realm service error during reset: " + e.getMessage());
+            }
+        }
     }
 
     // ── internals ──────────────────────────────────────────
 
     private void processPlayer(PlayerId player) {
-        if (realm == null) return;
-
         InputEvent event = inputBuffer.get(player);
         if (event == null) {
             messages.add(player + " passes.");
@@ -184,6 +204,11 @@ public class RelicHuntAdventure implements MiniAdventure {
         
         String action = event.action();
         String payload = event.payload();
+
+        if ("PASS".equalsIgnoreCase(action)) {
+            messages.add(player + " passes.");
+            return;
+        }
 
         if ("MOVE".equalsIgnoreCase(action)) {
             if (payload == null || payload.trim().isEmpty()) {
@@ -203,40 +228,47 @@ public class RelicHuntAdventure implements MiniAdventure {
                 }
             }
 
-            if (realm.movePlayer(player, dx, dy)) {
-                Optional<Coord> newPos = realm.playerPosition(player);
+            if (movePlayer(player, dx, dy)) {
+                Optional<Coord> newPos = playerPosition(player);
                 messages.add(player + " moves " + payload.toUpperCase() + 
                            " to " + newPos.map(c -> "(" + c.x() + "," + c.y() + ")").orElse("?"));
                 checkRelicAtPosition(player);
             } else {
                 messages.add(player + " ERROR: Cannot move " + payload.toUpperCase() + " (blocked/boundary)");
             }
+        } else if ("PASS".equalsIgnoreCase(action)) {
+            // no-op (handled above)
         } else {
-            messages.add(player + " ERROR: Unknown action '" + action + "' (try MOVE DIRECTION)");
+            // Silently ignore unsupported actions (keeps gameplay focused).
         }
     }
 
     private void checkRelicAtPosition(PlayerId player) {
-        if (realm == null) return;
-
-        Optional<Coord> pos = realm.playerPosition(player);
+        Optional<Coord> pos = playerPosition(player);
         if (pos.isEmpty()) return;
 
         Coord playerCoord = pos.get();
+        List<String> collectedIds = new ArrayList<>();
         for (Map.Entry<String, Coord> entry : relicPositions.entrySet()) {
-            if (entry.getValue().equals(playerCoord)) {
-                String relicId = entry.getKey();
-                if (realm.removeEntity(relicId)) {
-                    if (player == PlayerId.P1) {
-                        p1Relics++;
-                        messages.add("  *** P1 COLLECTED A RELIC! (" + p1Relics + "/" + RELICS_TO_WIN + ") ***");
-                    } else {
-                        p2Relics++;
-                        messages.add("  *** P2 COLLECTED A RELIC! (" + p2Relics + "/" + RELICS_TO_WIN + ") ***");
-                    }
-                    relicPositions.remove(relicId);
-                }
+            if (!entry.getValue().equals(playerCoord)) continue;
+
+            String relicId = entry.getKey();
+            if (realm != null) {
+                // Best-effort removal; scoring is driven by our internal relicPositions map.
+                realm.removeEntity(relicId);
             }
+
+            if (player == PlayerId.P1) {
+                p1Relics++;
+                messages.add("  *** P1 COLLECTED A RELIC! (" + p1Relics + "/" + RELICS_TO_WIN + ") ***");
+            } else {
+                p2Relics++;
+                messages.add("  *** P2 COLLECTED A RELIC! (" + p2Relics + "/" + RELICS_TO_WIN + ") ***");
+            }
+            collectedIds.add(relicId);
+        }
+        for (String relicId : collectedIds) {
+            relicPositions.remove(relicId);
         }
     }
 
@@ -244,7 +276,7 @@ public class RelicHuntAdventure implements MiniAdventure {
         if (p1Relics >= RELICS_TO_WIN && p2Relics >= RELICS_TO_WIN) {
             outcome = Outcome.DRAW;
             messages.add("═════════════════════════════════════");
-            messages.add("GAME END: Both collected " + RELICS_TO_WIN + " relics!");
+            messages.add("GAME END: Both players collected " + RELICS_TO_WIN + " relics!");
             messages.add("RESULT: DRAW!");
         } else if (p1Relics >= RELICS_TO_WIN) {
             outcome = Outcome.P1_WINS;
@@ -256,6 +288,48 @@ public class RelicHuntAdventure implements MiniAdventure {
             messages.add("═════════════════════════════════════");
             messages.add("GAME END: P2 collected " + RELICS_TO_WIN + " relics!");
             messages.add("RESULT: P2 WINS!");
+        }
+    }
+
+    private Optional<Coord> playerPosition(PlayerId player) {
+        if (realm != null) return realm.playerPosition(player);
+        return Optional.ofNullable(localPlayerPositions.get(player));
+    }
+
+    private boolean movePlayer(PlayerId player, int dx, int dy) {
+        if (realm != null) {
+            return realm.movePlayer(player, dx, dy);
+        }
+
+        Coord current = localPlayerPositions.get(player);
+        if (current == null) return false;
+
+        Coord newPos = new Coord(current.x() + dx, current.y() + dy);
+        if (!isInBounds(newPos)) return false;
+        localPlayerPositions.put(player, newPos);
+        return true;
+    }
+
+    private boolean isInBounds(Coord c) {
+        return c.x() >= 0 && c.x() <= MAX_COORD
+                && c.y() >= 0 && c.y() <= MAX_COORD;
+    }
+
+    private void setupRealmRound() {
+        // Place both players at the starting corners.
+        realm.placePlayer(PlayerId.P1, REALM, P1_START);
+        realm.placePlayer(PlayerId.P2, REALM, P2_START);
+
+        // Place relics as entities in the realm.
+        for (Map.Entry<String, Coord> entry : relicPositions.entrySet()) {
+            EntityView relic = new EntityView(
+                    entry.getKey(),
+                    "Relic " + entry.getKey(),
+                    "treasure",
+                    entry.getValue(),
+                    REALM
+            );
+            realm.addEntity(relic);
         }
     }
 }
