@@ -17,6 +17,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * Realm-based treasure hunt adventure.
@@ -127,10 +128,11 @@ public class RelicHuntAdventure implements MiniAdventure {
         messages.add("P1 @ " + p1Pos.map(c -> "(" + c.x() + "," + c.y() + ")").orElse("?") + 
                 "    P2 @ " + p2Pos.map(c -> "(" + c.x() + "," + c.y() + ")").orElse("?"));
 
-        if (!relicPositions.isEmpty()) {
+        Map<String, Coord> activeRelics = currentRelicPositions();
+        if (!activeRelics.isEmpty()) {
             StringBuilder sb = new StringBuilder("Remaining relics: ");
             int i = 0;
-            for (Map.Entry<String, Coord> entry : relicPositions.entrySet()) {
+            for (Map.Entry<String, Coord> entry : activeRelics.entrySet()) {
                 if (i > 0) sb.append(", ");
                 Coord c = entry.getValue();
                 sb.append("(").append(c.x()).append(",").append(c.y()).append(")");
@@ -248,8 +250,9 @@ public class RelicHuntAdventure implements MiniAdventure {
         if (pos.isEmpty()) return;
 
         Coord playerCoord = pos.get();
+        Map<String, Coord> relics = currentRelicPositions();
         List<String> collectedIds = new ArrayList<>();
-        for (Map.Entry<String, Coord> entry : relicPositions.entrySet()) {
+        for (Map.Entry<String, Coord> entry : relics.entrySet()) {
             if (!entry.getValue().equals(playerCoord)) continue;
 
             String relicId = entry.getKey();
@@ -267,9 +270,7 @@ public class RelicHuntAdventure implements MiniAdventure {
             }
             collectedIds.add(relicId);
         }
-        for (String relicId : collectedIds) {
-            relicPositions.remove(relicId);
-        }
+        collectedIds.forEach(relicPositions::remove);
     }
 
     private void checkWinCondition() {
@@ -331,5 +332,20 @@ public class RelicHuntAdventure implements MiniAdventure {
             );
             realm.addEntity(relic);
         }
+    }
+
+    private Map<String, Coord> currentRelicPositions() {
+        if (realm == null) {
+            return relicPositions;
+        }
+
+        return realm.listEntitiesInRealm(REALM).stream()
+                .filter(entity -> "treasure".equalsIgnoreCase(entity.type()))
+                .collect(Collectors.toMap(
+                        EntityView::id,
+                        EntityView::position,
+                        (left, right) -> right,
+                        HashMap::new
+                ));
     }
 }

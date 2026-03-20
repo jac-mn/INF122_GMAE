@@ -5,6 +5,7 @@ import gmae.core.api.MiniAdventure;
 import gmae.core.api.PlayerId;
 import gmae.core.model.AdventureState;
 import gmae.core.model.Coord;
+import gmae.core.model.EntityView;
 import gmae.core.model.ItemView;
 import gmae.core.model.Outcome;
 import gmae.core.model.PlayerView;
@@ -18,43 +19,28 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * A 2-player turn-based trade/delivery mini-adventure.
  *
- * <p>Players move caravans across 5 named locations connected by trade routes,
+ * <p>Players move caravans across 5 trade hubs on the shared realm map,
  * pick up local goods, and deliver them to fulfill orders for gold profit.
  * First player to complete {@value #ORDERS_TO_WIN} deliveries wins.</p>
- *
- * <p><b>Subsystem usage:</b></p>
- * <ul>
- *   <li><b>Realm/map</b> — tracks player positions via
- *       {@link GmaeRealmService#placePlayer} and
- *       {@link GmaeRealmService#playerPosition}.</li>
- *   <li><b>Inventory</b> — manages per-player trade goods via
- *       {@link GmaeInventoryService#addItem},
- *       {@link GmaeInventoryService#removeItem}, and
- *       {@link GmaeInventoryService#listItems}.</li>
- * </ul>
  */
 public class CaravanTradeRunAdventure implements MiniAdventure {
 
     private static final String REALM = "Shadowfen";
     private static final int ORDERS_TO_WIN = 2;
     private static final int INVENTORY_CAPACITY = 4;
-
-    // ── Location constants ──────────────────────────────────────────
+    private static final int GRID_SIZE = 10;
+    private static final int MAX_COORD = GRID_SIZE - 1;
 
     private static final String LOC_MARKETPLACE   = "Marketplace";
     private static final String LOC_DOCKS         = "Docks";
     private static final String LOC_CROSSROADS    = "Crossroads";
     private static final String LOC_MOUNTAIN_PASS = "Mountain Pass";
     private static final String LOC_OASIS         = "Oasis";
-
-    private static final List<String> ALL_LOCATIONS = List.of(
-            LOC_MARKETPLACE, LOC_DOCKS, LOC_CROSSROADS,
-            LOC_MOUNTAIN_PASS, LOC_OASIS
-    );
 
     private static final Map<String, Coord> LOCATION_COORDS;
     private static final Map<String, List<String>> ADJACENCY;
@@ -86,19 +72,17 @@ public class CaravanTradeRunAdventure implements MiniAdventure {
         LOCATION_GOODS = Collections.unmodifiableMap(goods);
     }
 
-    // ── Order definitions ───────────────────────────────────────────
-
     private static final class Order {
         final String item;
-        final int    qty;
+        final int qty;
         final String destination;
-        final int    reward;
+        final int reward;
 
         Order(String item, int qty, String destination, int reward) {
-            this.item        = item;
-            this.qty         = qty;
+            this.item = item;
+            this.qty = qty;
             this.destination = destination;
-            this.reward      = reward;
+            this.reward = reward;
         }
 
         @Override
@@ -109,58 +93,53 @@ public class CaravanTradeRunAdventure implements MiniAdventure {
     }
 
     private static final List<Order> P1_ORDERS = List.of(
-            new Order("Silk",  2, LOC_OASIS,         50),
-            new Order("Iron",  1, LOC_DOCKS,         40),
-            new Order("Fish",  2, LOC_MOUNTAIN_PASS,  45)
+            new Order("Silk", 2, LOC_OASIS, 50),
+            new Order("Iron", 1, LOC_DOCKS, 40),
+            new Order("Fish", 2, LOC_MOUNTAIN_PASS, 45)
     );
 
     private static final List<Order> P2_ORDERS = List.of(
-            new Order("Spice", 2, LOC_MARKETPLACE,    55),
-            new Order("Gems",  1, LOC_MOUNTAIN_PASS,  35),
-            new Order("Fish",  2, LOC_OASIS,          45)
+            new Order("Spice", 2, LOC_MARKETPLACE, 55),
+            new Order("Gems", 1, LOC_MOUNTAIN_PASS, 35),
+            new Order("Fish", 2, LOC_OASIS, 45)
     );
 
-    // ── Mutable game state ──────────────────────────────────────────
-
-    private GmaeRealmService     realm;
+    private GmaeRealmService realm;
     private GmaeInventoryService inventory;
 
-    private int     turn;
+    private int turn;
     private Outcome outcome;
-    private final List<String>                messages    = new ArrayList<>();
-    private final Map<PlayerId, InputEvent>   inputBuffer = new EnumMap<>(PlayerId.class);
-
-    private final Map<PlayerId, String>  playerLocation  = new EnumMap<>(PlayerId.class);
-    private final Map<PlayerId, Integer> orderIndex      = new EnumMap<>(PlayerId.class);
+    private final List<String> messages = new ArrayList<>();
+    private final Map<PlayerId, InputEvent> inputBuffer = new EnumMap<>(PlayerId.class);
+    private final Map<PlayerId, Integer> orderIndex = new EnumMap<>(PlayerId.class);
     private final Map<PlayerId, Integer> completedOrders = new EnumMap<>(PlayerId.class);
-    private final Map<PlayerId, Integer> totalProfit     = new EnumMap<>(PlayerId.class);
+    private final Map<PlayerId, Integer> totalProfit = new EnumMap<>(PlayerId.class);
+    private final Map<PlayerId, Coord> localPlayerPositions = new EnumMap<>(PlayerId.class);
 
     /** Local fallback when no inventory service is wired. */
     private final Map<PlayerId, Map<String, Integer>> localInventory =
             new EnumMap<>(PlayerId.class);
 
-    // ── MiniAdventure contract ──────────────────────────────────────
-
     @Override public String id()          { return "caravan-trade-run"; }
     @Override public String title()       { return "Caravan Trade Run"; }
     @Override public String description() {
-        return "Move goods across the realm — first to complete 2 deliveries wins!";
+        return "Move goods across the realm - first to complete 2 deliveries wins!";
     }
 
     @Override
     public void init() {
-        turn    = 0;
+        turn = 0;
         outcome = Outcome.IN_PROGRESS;
         messages.clear();
         inputBuffer.clear();
-        playerLocation.clear();
         orderIndex.clear();
         completedOrders.clear();
         totalProfit.clear();
         localInventory.clear();
+        localPlayerPositions.clear();
 
-        playerLocation.put(PlayerId.P1, LOC_MARKETPLACE);
-        playerLocation.put(PlayerId.P2, LOC_DOCKS);
+        localPlayerPositions.put(PlayerId.P1, LOCATION_COORDS.get(LOC_MARKETPLACE));
+        localPlayerPositions.put(PlayerId.P2, LOCATION_COORDS.get(LOC_DOCKS));
         orderIndex.put(PlayerId.P1, 0);
         orderIndex.put(PlayerId.P2, 0);
         completedOrders.put(PlayerId.P1, 0);
@@ -170,58 +149,26 @@ public class CaravanTradeRunAdventure implements MiniAdventure {
         localInventory.put(PlayerId.P1, new LinkedHashMap<>());
         localInventory.put(PlayerId.P2, new LinkedHashMap<>());
 
-        messages.add("═══════════════════════════════════════════");
-        messages.add("  Welcome to Caravan Trade Run!");
-        messages.add("═══════════════════════════════════════════");
-        messages.add("Move between locations, pick up trade goods,");
-        messages.add("and deliver them to fulfill orders for profit.");
-        messages.add("First to complete " + ORDERS_TO_WIN + " deliveries wins!");
-        messages.add("");
-        messages.add("── TRADE MAP ─────────────────────────────");
-        messages.add("  Marketplace [Silk] ──── Docks [Fish]");
-        messages.add("        │                    │");
-        messages.add("  Crossroads [Gems] ─────────┘");
-        messages.add("        │");
-        messages.add("  Mountain Pass [Iron] ── Oasis [Spice]");
-        messages.add("");
-        messages.add("── COMMANDS ──────────────────────────────");
-        messages.add("  status              — your location, inventory, order");
-        messages.add("  map                 — show trade routes");
-        messages.add("  look                — this location's goods & neighbors");
-        messages.add("  move <location>     — travel to adjacent location");
-        messages.add("  pickup <item> <qty> — pick up goods (capacity: "
-                + INVENTORY_CAPACITY + ")");
-        messages.add("  deliver             — fulfill order at destination");
-        messages.add("  help                — show commands again");
-        messages.add("");
-        messages.add("── EXAMPLES ──────────────────────────────");
-        messages.add("  move Crossroads     — travel from current to Crossroads");
-        messages.add("  move Oasis          — travel to Oasis (if adjacent)");
-        messages.add("  pickup Silk 2       — pick up 2 Silk at Marketplace");
-        messages.add("  pickup Fish 1       — pick up 1 Fish at Docks");
-        messages.add("  deliver             — deliver goods for your order");
-        messages.add("  status              — check your inventory and order");
-        messages.add("");
-        messages.add("── STARTING POSITIONS ────────────────────");
-        messages.add("  P1 starts at " + LOC_MARKETPLACE);
-        messages.add("  P2 starts at " + LOC_DOCKS);
-        messages.add("");
-        messages.add("── CURRENT ORDERS ────────────────────────");
-        messages.add("  P1: " + currentOrder(PlayerId.P1));
-        messages.add("  P2: " + currentOrder(PlayerId.P2));
+        messages.add("Welcome to Caravan Trade Run!");
+        messages.add("Trade hubs sit on the realm map - step onto them to buy and deliver goods.");
+        messages.add("First to complete " + ORDERS_TO_WIN + " deliveries wins.");
+        messages.add("Map hubs: Marketplace (0,0), Docks (9,0), Crossroads (5,5), Mountain Pass (0,9), Oasis (9,9)");
+        messages.add("Commands: status, map, look, move north|south|east|west, pickup <item> <qty>, deliver, help");
+        messages.add("P1 starts at Marketplace. P2 starts at Docks.");
+        messages.add("P1 order: " + currentOrder(PlayerId.P1));
+        messages.add("P2 order: " + currentOrder(PlayerId.P2));
     }
 
     @Override
     public void bindServices(ServiceBundle services) {
-        this.realm     = services.realmService().orElse(null);
+        this.realm = services.realmService().orElse(null);
         this.inventory = services.inventoryService().orElse(null);
 
         if (realm != null) {
             try {
-                realm.placePlayer(PlayerId.P1, REALM,
-                        LOCATION_COORDS.get(LOC_MARKETPLACE));
-                realm.placePlayer(PlayerId.P2, REALM,
-                        LOCATION_COORDS.get(LOC_DOCKS));
+                realm.placePlayer(PlayerId.P1, REALM, LOCATION_COORDS.get(LOC_MARKETPLACE));
+                realm.placePlayer(PlayerId.P2, REALM, LOCATION_COORDS.get(LOC_DOCKS));
+                placeTradeMarkers();
                 messages.add("[Realm service active]");
             } catch (Exception e) {
                 messages.add("[Realm service error: " + e.getMessage() + "]");
@@ -247,13 +194,9 @@ public class CaravanTradeRunAdventure implements MiniAdventure {
 
         turn++;
         messages.clear();
-        messages.add("═══════════════════════════════════════════");
-        messages.add("  Turn " + turn
-                + "  |  P1 deliveries: " + completedOrders.get(PlayerId.P1)
-                + "/" + ORDERS_TO_WIN
-                + "  |  P2 deliveries: " + completedOrders.get(PlayerId.P2)
-                + "/" + ORDERS_TO_WIN);
-        messages.add("───────────────────────────────────────────");
+        messages.add("Turn " + turn
+                + " | P1 deliveries: " + completedOrders.get(PlayerId.P1) + "/" + ORDERS_TO_WIN
+                + " | P2 deliveries: " + completedOrders.get(PlayerId.P2) + "/" + ORDERS_TO_WIN);
 
         processPlayer(PlayerId.P1);
         processPlayer(PlayerId.P2);
@@ -288,17 +231,14 @@ public class CaravanTradeRunAdventure implements MiniAdventure {
         init();
         if (realm != null) {
             try {
-                realm.placePlayer(PlayerId.P1, REALM,
-                        LOCATION_COORDS.get(LOC_MARKETPLACE));
-                realm.placePlayer(PlayerId.P2, REALM,
-                        LOCATION_COORDS.get(LOC_DOCKS));
+                realm.placePlayer(PlayerId.P1, REALM, LOCATION_COORDS.get(LOC_MARKETPLACE));
+                realm.placePlayer(PlayerId.P2, REALM, LOCATION_COORDS.get(LOC_DOCKS));
+                placeTradeMarkers();
             } catch (Exception e) {
                 messages.add("[Realm error on reset: " + e.getMessage() + "]");
             }
         }
     }
-
-    // ── Command processing ──────────────────────────────────────────
 
     private void processPlayer(PlayerId player) {
         InputEvent event = inputBuffer.get(player);
@@ -307,113 +247,89 @@ public class CaravanTradeRunAdventure implements MiniAdventure {
             return;
         }
 
-        String action  = event.action().toUpperCase();
+        String action = event.action().toUpperCase();
         String payload = event.payload();
 
         switch (action) {
-            case "PASS"    -> messages.add(player + " passes.");
-            case "HELP"    -> handleHelp(player);
-            case "STATUS"  -> handleStatus(player);
-            case "MAP"     -> handleMap(player);
-            case "LOOK"    -> handleLook(player);
-            case "MOVE"    -> handleMove(player, payload);
-            case "PICKUP"  -> handlePickup(player, payload);
+            case "PASS" -> messages.add(player + " passes.");
+            case "HELP" -> handleHelp(player);
+            case "STATUS" -> handleStatus(player);
+            case "MAP" -> handleMap(player);
+            case "LOOK" -> handleLook(player);
+            case "MOVE" -> handleMove(player, payload);
+            case "PICKUP" -> handlePickup(player, payload);
             case "DELIVER" -> handleDeliver(player);
-            default -> messages.add(player + ": Unknown command '"
-                    + action.toLowerCase() + "'. Type 'help'.");
+            default -> messages.add(player + ": Unknown command '" + action.toLowerCase() + "'. Type 'help'.");
         }
     }
 
     private void handleHelp(PlayerId player) {
-        messages.add(player + " — COMMANDS:");
-        messages.add("  help                — show this list");
-        messages.add("  status              — location, inventory, order, profit");
-        messages.add("  map                 — show trade routes and goods");
-        messages.add("  look                — this location's goods and neighbors");
-        messages.add("  move <location>     — travel to an adjacent location");
-        messages.add("  pickup <item> <qty> — pick up goods (capacity: "
-                + INVENTORY_CAPACITY + ")");
-        messages.add("  deliver             — fulfill your order at destination");
+        messages.add(player + " commands: status, map, look, move north|south|east|west, pickup <item> <qty>, deliver");
     }
 
     private void handleStatus(PlayerId player) {
-        String loc       = playerLocation.get(player);
-        Order  order     = currentOrder(player);
-        int    completed = completedOrders.get(player);
-        int    profit    = totalProfit.get(player);
+        Coord coord = playerCoord(player).orElse(null);
+        String loc = currentLocation(player);
+        Order order = currentOrder(player);
+        int completed = completedOrders.get(player);
+        int profit = totalProfit.get(player);
         List<ItemView> items = listPlayerItems(player);
 
         messages.add(player + " STATUS:");
-        messages.add("  Location : " + loc);
+        messages.add("  Position : " + formatCoord(coord));
+        messages.add("  Location : " + (loc != null ? loc : "On the road"));
         messages.add("  Inventory: " + formatInventory(items)
-                + "  [" + countInventoryItems(player) + "/" + INVENTORY_CAPACITY + "]");
-        messages.add("  Order    : "
-                + (order != null ? order.toString() : "NONE"));
+                + " [" + countInventoryItems(player) + "/" + INVENTORY_CAPACITY + "]");
+        messages.add("  Order    : " + (order != null ? order.toString() : "NONE"));
         messages.add("  Completed: " + completed + "/" + ORDERS_TO_WIN);
         messages.add("  Profit   : " + profit + "g");
     }
 
     private void handleMap(PlayerId player) {
-        messages.add(player + " — TRADE MAP:");
-        messages.add("  Marketplace [Silk] ──── Docks [Fish]");
-        messages.add("        │                    │");
-        messages.add("  Crossroads [Gems] ─────────┘");
-        messages.add("        │");
-        messages.add("  Mountain Pass [Iron] ── Oasis [Spice]");
+        messages.add(player + " trade hubs:");
+        for (Map.Entry<String, Coord> entry : LOCATION_COORDS.entrySet()) {
+            String location = entry.getKey();
+            Coord coord = entry.getValue();
+            messages.add("  " + location + " " + formatCoord(coord)
+                    + " sells " + LOCATION_GOODS.get(location)
+                    + " | routes: " + String.join(", ", ADJACENCY.get(location)));
+        }
     }
 
     private void handleLook(PlayerId player) {
-        String loc          = playerLocation.get(player);
-        String goods        = LOCATION_GOODS.get(loc);
-        List<String> routes = ADJACENCY.get(loc);
+        Coord coord = playerCoord(player).orElse(null);
+        String loc = currentLocation(player);
+        if (loc == null) {
+            messages.add(player + " is at " + formatCoord(coord) + ", between trade hubs.");
+            return;
+        }
 
-        messages.add(player + " looks around " + loc + ":");
-        messages.add("  Goods here : " + goods);
-        messages.add("  Routes to  : " + String.join(", ", routes));
+        messages.add(player + " looks around " + loc + " " + formatCoord(coord) + ":");
+        messages.add("  Goods here : " + LOCATION_GOODS.get(loc));
+        messages.add("  Routes to  : " + String.join(", ", ADJACENCY.get(loc)));
     }
 
     private void handleMove(PlayerId player, String payload) {
-        if (payload == null || payload.isBlank()) {
-            messages.add(player
-                    + ": Where to? Use 'move <location>'. Type 'map' for routes.");
+        Direction direction = Direction.parse(payload);
+        if (direction == null) {
+            messages.add(player + ": Use 'move north', 'move south', 'move east', or 'move west'.");
             return;
         }
 
-        String upper = payload.toUpperCase();
-        if ("NORTH".equals(upper) || "SOUTH".equals(upper)
-                || "EAST".equals(upper) || "WEST".equals(upper)) {
-            messages.add(player
-                    + ": Use location names, not directions. Type 'map' for routes.");
+        if (!movePlayer(player, direction.dx, direction.dy)) {
+            messages.add(player + ": Cannot move " + direction.label
+                    + " from " + formatCoord(playerCoord(player).orElse(null)) + ".");
             return;
         }
 
-        String currentLoc  = playerLocation.get(player);
-        String destination  = resolveLocation(payload);
-
-        if (destination == null) {
-            messages.add(player + ": Unknown location '" + payload
-                    + "'. Type 'map' for routes.");
-            return;
+        Coord coord = playerCoord(player).orElse(null);
+        String loc = currentLocation(player);
+        if (loc != null) {
+            messages.add(player + " moves " + direction.label + " to " + loc + " " + formatCoord(coord) + ".");
+        } else {
+            messages.add(player + " moves " + direction.label + " to " + formatCoord(coord)
+                    + ", between trade hubs.");
         }
-        if (destination.equals(currentLoc)) {
-            messages.add(player + ": Already at " + currentLoc + ".");
-            return;
-        }
-        if (!ADJACENCY.get(currentLoc).contains(destination)) {
-            messages.add(player + ": No direct route from " + currentLoc
-                    + " to " + destination + ".");
-            messages.add("  Routes from " + currentLoc + ": "
-                    + String.join(", ", ADJACENCY.get(currentLoc)));
-            return;
-        }
-
-        playerLocation.put(player, destination);
-        if (realm != null) {
-            try {
-                realm.placePlayer(player, REALM, LOCATION_COORDS.get(destination));
-            } catch (Exception ignored) { /* local state already updated */ }
-        }
-        messages.add(player + " travels to " + destination + ".");
     }
 
     private void handlePickup(PlayerId player, String payload) {
@@ -448,28 +364,31 @@ public class CaravanTradeRunAdventure implements MiniAdventure {
             return;
         }
 
-        String loc            = playerLocation.get(player);
-        String availableGoods = LOCATION_GOODS.get(loc);
-
-        if (!availableGoods.equalsIgnoreCase(itemName)) {
-            messages.add(player + ": " + itemName + " is not available at "
-                    + loc + ". This location sells " + availableGoods + ".");
+        String loc = currentLocation(player);
+        if (loc == null) {
+            messages.add(player + ": You must be standing on a trade location to pick up goods.");
             return;
         }
-        itemName = availableGoods;
+
+        String availableGoods = LOCATION_GOODS.get(loc);
+        if (!availableGoods.equalsIgnoreCase(itemName)) {
+            messages.add(player + ": " + itemName + " is not available at " + loc
+                    + ". This location sells " + availableGoods + ".");
+            return;
+        }
 
         int currentTotal = countInventoryItems(player);
         if (currentTotal + qty > INVENTORY_CAPACITY) {
             int canFit = INVENTORY_CAPACITY - currentTotal;
             messages.add(player + ": Not enough capacity! ["
                     + currentTotal + "/" + INVENTORY_CAPACITY
-                    + "]  Can pick up at most " + canFit + " more.");
+                    + "] Can pick up at most " + canFit + " more.");
             return;
         }
 
-        addToInventory(player, itemName, qty);
-        messages.add(player + " picks up " + qty + "x " + itemName
-                + " at " + loc + ".  ["
+        addToInventory(player, availableGoods, qty);
+        messages.add(player + " picks up " + qty + "x " + availableGoods
+                + " at " + loc + ". ["
                 + (currentTotal + qty) + "/" + INVENTORY_CAPACITY + " items]");
     }
 
@@ -480,7 +399,12 @@ public class CaravanTradeRunAdventure implements MiniAdventure {
             return;
         }
 
-        String loc = playerLocation.get(player);
+        String loc = currentLocation(player);
+        if (loc == null) {
+            messages.add(player + ": You must be standing on " + order.destination
+                    + " to deliver. Current position: " + formatCoord(playerCoord(player).orElse(null)) + ".");
+            return;
+        }
         if (!loc.equals(order.destination)) {
             messages.add(player + ": Must be at " + order.destination
                     + " to deliver. Currently at " + loc + ".");
@@ -496,25 +420,21 @@ public class CaravanTradeRunAdventure implements MiniAdventure {
         removeFromInventory(player, order.item, order.qty);
 
         int completed = completedOrders.get(player) + 1;
-        int profit    = totalProfit.get(player) + order.reward;
+        int profit = totalProfit.get(player) + order.reward;
         completedOrders.put(player, completed);
         totalProfit.put(player, profit);
 
-        messages.add("  ★ " + player + " DELIVERS " + order.qty + "x "
-                + order.item + " to " + order.destination + "!");
-        messages.add("    Reward: +" + order.reward + "g  |  Total: "
-                + profit + "g  |  Deliveries: "
-                + completed + "/" + ORDERS_TO_WIN);
+        messages.add(player + " delivers " + order.qty + "x " + order.item
+                + " to " + order.destination + " for +" + order.reward + "g.");
+        messages.add("  Total profit: " + profit + "g | Deliveries: " + completed + "/" + ORDERS_TO_WIN);
 
         int nextIdx = orderIndex.get(player) + 1;
         orderIndex.put(player, nextIdx);
         Order next = currentOrder(player);
         if (next != null && completed < ORDERS_TO_WIN) {
-            messages.add("    Next order: " + next);
+            messages.add("  Next order: " + next);
         }
     }
-
-    // ── Win condition ───────────────────────────────────────────────
 
     private void checkWinCondition() {
         int p1 = completedOrders.get(PlayerId.P1);
@@ -522,58 +442,38 @@ public class CaravanTradeRunAdventure implements MiniAdventure {
 
         if (p1 >= ORDERS_TO_WIN && p2 >= ORDERS_TO_WIN) {
             outcome = Outcome.DRAW;
-            messages.add("═══════════════════════════════════════════");
-            messages.add("  DRAW! Both traders completed "
-                    + ORDERS_TO_WIN + " deliveries!");
-            messages.add("  P1: " + totalProfit.get(PlayerId.P1) + "g"
-                    + "  |  P2: " + totalProfit.get(PlayerId.P2) + "g");
+            messages.add("DRAW! Both traders completed " + ORDERS_TO_WIN + " deliveries.");
+            messages.add("P1: " + totalProfit.get(PlayerId.P1) + "g | P2: " + totalProfit.get(PlayerId.P2) + "g");
         } else if (p1 >= ORDERS_TO_WIN) {
             outcome = Outcome.P1_WINS;
-            messages.add("═══════════════════════════════════════════");
-            messages.add("  P1 WINS with "
-                    + totalProfit.get(PlayerId.P1) + "g profit!");
+            messages.add("P1 wins with " + totalProfit.get(PlayerId.P1) + "g profit.");
         } else if (p2 >= ORDERS_TO_WIN) {
             outcome = Outcome.P2_WINS;
-            messages.add("═══════════════════════════════════════════");
-            messages.add("  P2 WINS with "
-                    + totalProfit.get(PlayerId.P2) + "g profit!");
+            messages.add("P2 wins with " + totalProfit.get(PlayerId.P2) + "g profit.");
         }
     }
-
-    // ── Helpers ─────────────────────────────────────────────────────
 
     private Order currentOrder(PlayerId player) {
-        List<Order> pool = (player == PlayerId.P1) ? P1_ORDERS : P2_ORDERS;
+        List<Order> pool = player == PlayerId.P1 ? P1_ORDERS : P2_ORDERS;
         int idx = orderIndex.getOrDefault(player, 0);
-        return (idx < pool.size()) ? pool.get(idx) : null;
-    }
-
-    private String resolveLocation(String input) {
-        for (String loc : ALL_LOCATIONS) {
-            if (loc.equalsIgnoreCase(input)) return loc;
-        }
-        String lower = input.toLowerCase();
-        for (String loc : ALL_LOCATIONS) {
-            if (loc.toLowerCase().startsWith(lower)) return loc;
-        }
-        return null;
+        return idx < pool.size() ? pool.get(idx) : null;
     }
 
     private PlayerView buildPlayerView(PlayerId player) {
         Map<String, String> attrs = new LinkedHashMap<>();
-        attrs.put("location",   playerLocation.getOrDefault(player, "?"));
+        Coord coord = playerCoord(player).orElse(null);
+        String loc = currentLocation(player);
         Order order = currentOrder(player);
-        attrs.put("order",      order != null ? order.toString() : "NONE");
-        attrs.put("deliveries", completedOrders.getOrDefault(player, 0)
-                + "/" + ORDERS_TO_WIN);
-        attrs.put("profit",     totalProfit.getOrDefault(player, 0) + "g");
-        attrs.put("inventory",  formatInventory(listPlayerItems(player)));
 
-        return new PlayerView(player, player.name(),
-                totalProfit.getOrDefault(player, 0), attrs);
+        attrs.put("position", formatCoord(coord));
+        attrs.put("location", loc != null ? loc : "On the road");
+        attrs.put("order", order != null ? order.toString() : "NONE");
+        attrs.put("deliveries", completedOrders.getOrDefault(player, 0) + "/" + ORDERS_TO_WIN);
+        attrs.put("profit", totalProfit.getOrDefault(player, 0) + "g");
+        attrs.put("inventory", formatInventory(listPlayerItems(player)));
+
+        return new PlayerView(player, player.name(), totalProfit.getOrDefault(player, 0), attrs);
     }
-
-    // ── Inventory delegates (service or local fallback) ─────────────
 
     private List<ItemView> listPlayerItems(PlayerId player) {
         if (inventory != null) return inventory.listItems(player);
@@ -581,10 +481,13 @@ public class CaravanTradeRunAdventure implements MiniAdventure {
         List<ItemView> result = new ArrayList<>();
         Map<String, Integer> local = localInventory.get(player);
         if (local != null) {
-            for (Map.Entry<String, Integer> e : local.entrySet()) {
+            for (Map.Entry<String, Integer> entry : local.entrySet()) {
                 result.add(new ItemView(
-                        player + ":" + e.getKey().toLowerCase(),
-                        e.getKey(), "Trade goods", e.getValue()));
+                        player + ":" + entry.getKey().toLowerCase(),
+                        entry.getKey(),
+                        "Trade goods",
+                        entry.getValue()
+                ));
             }
         }
         return result;
@@ -600,8 +503,7 @@ public class CaravanTradeRunAdventure implements MiniAdventure {
 
     private boolean hasItems(PlayerId player, String itemName, int qty) {
         for (ItemView item : listPlayerItems(player)) {
-            if (item.name().equalsIgnoreCase(itemName)
-                    && item.quantity() >= qty) {
+            if (item.name().equalsIgnoreCase(itemName) && item.quantity() >= qty) {
                 return true;
             }
         }
@@ -635,9 +537,103 @@ public class CaravanTradeRunAdventure implements MiniAdventure {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < items.size(); i++) {
             if (i > 0) sb.append(", ");
-            sb.append(items.get(i).quantity()).append("x ")
-              .append(items.get(i).name());
+            sb.append(items.get(i).quantity()).append("x ").append(items.get(i).name());
         }
         return sb.toString();
+    }
+
+    private Optional<Coord> playerCoord(PlayerId player) {
+        if (realm != null) {
+            return realm.playerPosition(player);
+        }
+        return Optional.ofNullable(localPlayerPositions.get(player));
+    }
+
+    private String currentLocation(PlayerId player) {
+        return playerCoord(player).map(this::locationAt).orElse(null);
+    }
+
+    private String locationAt(Coord coord) {
+        for (Map.Entry<String, Coord> entry : LOCATION_COORDS.entrySet()) {
+            if (entry.getValue().equals(coord)) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
+
+    private boolean movePlayer(PlayerId player, int dx, int dy) {
+        if (realm != null) {
+            return realm.movePlayer(player, dx, dy);
+        }
+
+        Coord current = localPlayerPositions.get(player);
+        if (current == null) {
+            return false;
+        }
+
+        Coord next = new Coord(current.x() + dx, current.y() + dy);
+        if (!isInBounds(next)) {
+            return false;
+        }
+
+        localPlayerPositions.put(player, next);
+        return true;
+    }
+
+    private boolean isInBounds(Coord coord) {
+        return coord != null
+                && coord.x() >= 0 && coord.x() <= MAX_COORD
+                && coord.y() >= 0 && coord.y() <= MAX_COORD;
+    }
+
+    private String formatCoord(Coord coord) {
+        return coord == null ? "?" : "(" + coord.x() + "," + coord.y() + ")";
+    }
+
+    private void placeTradeMarkers() {
+        if (realm == null) {
+            return;
+        }
+
+        for (Map.Entry<String, Coord> entry : LOCATION_COORDS.entrySet()) {
+            realm.addEntity(new EntityView(
+                    "trade-" + entry.getKey().toLowerCase().replace(' ', '-'),
+                    entry.getKey(),
+                    "trade-location",
+                    entry.getValue(),
+                    REALM
+            ));
+        }
+    }
+
+    private enum Direction {
+        NORTH("NORTH", 0, -1),
+        SOUTH("SOUTH", 0, 1),
+        EAST("EAST", 1, 0),
+        WEST("WEST", -1, 0);
+
+        private final String label;
+        private final int dx;
+        private final int dy;
+
+        Direction(String label, int dx, int dy) {
+            this.label = label;
+            this.dx = dx;
+            this.dy = dy;
+        }
+
+        private static Direction parse(String payload) {
+            if (payload == null) {
+                return null;
+            }
+            return switch (payload.trim().toUpperCase()) {
+                case "NORTH" -> NORTH;
+                case "SOUTH" -> SOUTH;
+                case "EAST" -> EAST;
+                case "WEST" -> WEST;
+                default -> null;
+            };
+        }
     }
 }
