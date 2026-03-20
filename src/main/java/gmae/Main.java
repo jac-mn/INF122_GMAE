@@ -5,6 +5,7 @@ import gmae.adventures.demo.DemoAdventure;
 import gmae.adventures.relicHunt.RelicHuntAdventure;
 import gmae.core.engine.AdventureRegistry;
 import gmae.ui.ConsoleUI;
+import gmae.ui.gui.GuiLauncher;
 
 import java.util.Scanner;
 
@@ -20,8 +21,12 @@ public class Main {
         registry.register(DemoAdventure::new);
         registry.register(RelicHuntAdventure::new);
         registry.register(CaravanTradeRunAdventure::new);
-        Scanner scanner = new Scanner(System.in);
-        new ConsoleUI(registry, scanner).run();
-        scanner.close();
+        if (args.length > 0 && "--gui".equals(args[0])) {
+            new GuiLauncher(registry).launch();
+        } else {
+            Scanner scanner = new Scanner(System.in);
+            new ConsoleUI(registry, scanner).run();
+            scanner.close();
+        }
     }
 }

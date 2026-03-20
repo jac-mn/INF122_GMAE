@@ -11,8 +11,8 @@ import java.util.Optional;
 /**
  * Provides realm/map queries and player movement operations to adventures.
  *
- * <p>Adapters (sub-team #2) will implement this by wrapping the legacy
- * {@code guildquest} realm/spatial subsystem. Adventures see only engine DTOs
+ * <p>Adapters implement this by wrapping the legacy {@code guildquest}
+ * realm/spatial subsystem. Adventures see only engine DTOs
  * ({@link RealmView}, {@link Coord}, {@link EntityView}) — never legacy types.</p>
  */
 public interface GmaeRealmService {

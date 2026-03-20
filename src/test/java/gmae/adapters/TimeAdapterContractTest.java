@@ -4,17 +4,16 @@ import gmae.core.services.GmaeTimeService;
 import gmae.core.services.TimeContractTest;
 
 /**
- * Adapter contract test skeleton for sub-team #2.
+ * Contract test for the time adapter layer.
  *
- * <p>Override {@link #createService()} to return your real time adapter.
- * All invariants from {@link TimeContractTest} are inherited automatically.</p>
+ * <p>Inherits every invariant from {@link TimeContractTest}.
+ * Currently validated against the fake implementation; swap in a real
+ * adapter when the legacy time subsystem is integrated.</p>
  */
 class TimeAdapterContractTest extends TimeContractTest {
 
     @Override
     protected GmaeTimeService createService() {
-        // TODO (sub-team #2): replace with your real adapter, e.g.:
-        //   return new TimeAdapter(legacyStore);
-        return super.createService();   // falls back to FakeTimeService for now
+        return super.createService();
     }
 }
