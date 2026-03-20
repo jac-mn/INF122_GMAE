@@ -17,16 +17,19 @@ public final class ServiceBundle {
     private final GmaeTimeService       timeService;
     private final GmaeInventoryService  inventoryService;
     private final GmaeQuestEventService questEventService;
+    private final GmaeRealmService      realmService;
 
     private ServiceBundle(Builder b) {
         this.timeService       = b.timeService;
         this.inventoryService  = b.inventoryService;
         this.questEventService = b.questEventService;
+        this.realmService      = b.realmService;
     }
 
     public Optional<GmaeTimeService>       timeService()       { return Optional.ofNullable(timeService); }
     public Optional<GmaeInventoryService>  inventoryService()  { return Optional.ofNullable(inventoryService); }
     public Optional<GmaeQuestEventService> questEventService() { return Optional.ofNullable(questEventService); }
+    public Optional<GmaeRealmService>      realmService()      { return Optional.ofNullable(realmService); }
 
     /** Returns an empty bundle (no services available). */
     public static ServiceBundle empty() { return new Builder().build(); }
@@ -37,12 +40,14 @@ public final class ServiceBundle {
         private GmaeTimeService       timeService;
         private GmaeInventoryService  inventoryService;
         private GmaeQuestEventService questEventService;
+        private GmaeRealmService      realmService;
 
         private Builder() {}
 
         public Builder timeService(GmaeTimeService v)             { timeService = v;       return this; }
         public Builder inventoryService(GmaeInventoryService v)   { inventoryService = v;  return this; }
         public Builder questEventService(GmaeQuestEventService v) { questEventService = v; return this; }
+        public Builder realmService(GmaeRealmService v)           { realmService = v;      return this; }
 
         public ServiceBundle build() { return new ServiceBundle(this); }
     }

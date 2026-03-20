@@ -2,6 +2,7 @@ package gmae;
 
 import gmae.adventures.demo.DemoAdventure;
 import gmae.core.engine.AdventureRegistry;
+import gmae.adventures.relicHunt.RelicHuntAdventure;
 import gmae.ui.ConsoleUI;
 
 import java.util.Scanner;
@@ -16,7 +17,7 @@ public class Main {
     public static void main(String[] args) {
         AdventureRegistry registry = new AdventureRegistry();
         registry.register(DemoAdventure::new);
-
+        registry.register(RelicHuntAdventure::new);
         Scanner scanner = new Scanner(System.in);
         new ConsoleUI(registry, scanner).run();
         scanner.close();
