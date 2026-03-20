@@ -7,9 +7,9 @@ import java.util.List;
 /**
  * Provides quest-event queries and mutations to adventures.
  *
- * <p>Adapters (sub-team #2) will implement this by wrapping the legacy
- * {@code guildquest} campaign/event subsystem. Adventures see only
- * {@link QuestEventView} DTOs — never legacy types.</p>
+ * <p>Adapters implement this by wrapping the legacy {@code guildquest}
+ * campaign/event subsystem. Adventures see only {@link QuestEventView}
+ * DTOs — never legacy types.</p>
  *
  * <p><em>Optional service</em> — not every engine configuration will
  * provide this. Adventures should check for its presence via

@@ -8,9 +8,9 @@ import java.util.List;
 /**
  * Provides per-player inventory operations to adventures.
  *
- * <p>Adapters (sub-team #2) will implement this by wrapping the legacy
- * {@code guildquest} inventory subsystem. Adventures see only
- * {@link ItemView} DTOs and {@link PlayerId} — never legacy types.</p>
+ * <p>Adapters implement this by wrapping the legacy {@code guildquest}
+ * inventory subsystem. Adventures see only {@link ItemView} DTOs and
+ * {@link PlayerId} — never legacy types.</p>
  */
 public interface GmaeInventoryService {
 

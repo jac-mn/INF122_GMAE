@@ -4,18 +4,16 @@ import gmae.core.services.GmaeQuestEventService;
 import gmae.core.services.QuestEventContractTest;
 
 /**
- * Adapter contract test skeleton for sub-team #2.
+ * Contract test for the quest-event adapter layer.
  *
- * <p>Override {@link #createService()} to return your real quest-event
- * adapter. All invariants from {@link QuestEventContractTest} are inherited
- * automatically.</p>
+ * <p>Inherits every invariant from {@link QuestEventContractTest}.
+ * Currently validated against the fake implementation; swap in a real
+ * adapter when the legacy quest-event subsystem is integrated.</p>
  */
 class QuestEventAdapterContractTest extends QuestEventContractTest {
 
     @Override
     protected GmaeQuestEventService createService() {
-        // TODO (sub-team #2): replace with your real adapter, e.g.:
-        //   return new QuestEventAdapter(legacyCampaignService, legacyStore);
-        return super.createService();   // falls back to FakeQuestEventService for now
+        return super.createService();
     }
 }

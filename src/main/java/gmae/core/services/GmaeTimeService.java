@@ -7,9 +7,9 @@ import java.util.Optional;
 /**
  * Provides world-time queries and time advancement to adventures.
  *
- * <p>Adapters (sub-team #2) will implement this by wrapping the legacy
- * {@code guildquest} time subsystem. Adventures see only {@link TimeView}
- * DTOs — never legacy types.</p>
+ * <p>Adapters implement this by wrapping the legacy {@code guildquest}
+ * time subsystem. Adventures see only {@link TimeView} DTOs — never
+ * legacy types.</p>
  */
 public interface GmaeTimeService {
 
