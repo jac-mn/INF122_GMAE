@@ -1,8 +1,9 @@
 package gmae;
 
+import gmae.adventures.caravanTrade.CaravanTradeRunAdventure;
 import gmae.adventures.demo.DemoAdventure;
-import gmae.core.engine.AdventureRegistry;
 import gmae.adventures.relicHunt.RelicHuntAdventure;
+import gmae.core.engine.AdventureRegistry;
 import gmae.ui.ConsoleUI;
 
 import java.util.Scanner;
@@ -18,6 +19,7 @@ public class Main {
         AdventureRegistry registry = new AdventureRegistry();
         registry.register(DemoAdventure::new);
         registry.register(RelicHuntAdventure::new);
+        registry.register(CaravanTradeRunAdventure::new);
         Scanner scanner = new Scanner(System.in);
         new ConsoleUI(registry, scanner).run();
         scanner.close();

@@ -127,6 +127,20 @@ public class RelicHuntAdventure implements MiniAdventure {
         messages.add("P1 @ " + p1Pos.map(c -> "(" + c.x() + "," + c.y() + ")").orElse("?") + 
                 "    P2 @ " + p2Pos.map(c -> "(" + c.x() + "," + c.y() + ")").orElse("?"));
 
+        if (!relicPositions.isEmpty()) {
+            StringBuilder sb = new StringBuilder("Remaining relics: ");
+            int i = 0;
+            for (Map.Entry<String, Coord> entry : relicPositions.entrySet()) {
+                if (i > 0) sb.append(", ");
+                Coord c = entry.getValue();
+                sb.append("(").append(c.x()).append(",").append(c.y()).append(")");
+                i++;
+            }
+            messages.add(sb.toString());
+        } else {
+            messages.add("Remaining relics: none");
+        }
+
         messages.add("─────────────────────────────────────");
 
         processPlayer(PlayerId.P1);
